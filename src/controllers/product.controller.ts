@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { Product } from "../models/product.model";
 import { uploadImage } from "../utils/cloudinary";
+import xlsx from 'xlsx';
+import fs from 'fs';
 
 export const createProduct = async (req: Request, res: Response) => {
   try {
@@ -38,6 +40,78 @@ export const createProduct = async (req: Request, res: Response) => {
       error: "Error creating product",
       details: error.message 
     });
+  }
+};
+
+export const bulkCreateProducts = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No se subió ningún archivo" });
+    }
+
+    // 1. Leer el archivo Excel
+    const workbook = xlsx.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const rawData: Array<{ name: string; price: number; imageUrl?: string }> =
+      xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    // 2. Validaciones
+    if (!rawData.every((item) => item.name && item.price)) {
+      return res.status(400).json({
+        error: 'El archivo debe contener las columnas "name" y "price"',
+      });
+    }
+
+    // 3. Validar URLs de imágenes (si existen)
+    const invalidUrls = rawData.filter(
+      (item) => item.imageUrl && !isValidUrl(item.imageUrl)
+    );
+    if (invalidUrls.length > 0) {
+      return res.status(400).json({
+        error: `URLs inválidas en los productos: ${invalidUrls.map(item => item.name).join(", ")}`,
+      });
+    }
+
+    // 4. Transformar datos (ej. convertir price a número)
+    const productsToInsert = rawData.map((item) => ({
+      name: item.name.trim(),
+      price: Number(item.price),
+      imageUrl: item.imageUrl?.trim(), // Opcional
+      createdAt: new Date(),
+    }));
+
+    // 5. Insertar en la base de datos
+    const result = await Product.insertMany(productsToInsert);
+
+    // 6. Limpieza: eliminar archivo temporal
+    fs.unlinkSync(req.file.path);
+
+    res.status(201).json({
+      success: true,
+      insertedCount: result.length,
+      products: result,
+    });
+  } catch (error: any) {
+    // 7. Manejo de errores específicos
+    if (error.code === 11000) {
+      return res.status(400).json({
+        error: "Algunos productos ya existen (nombre duplicado)",
+      });
+    }
+    res.status(500).json({
+      error: "Error en la carga masiva",
+      details: error.message,
+    });
+  }
+};
+
+// Función auxiliar para validar URLs
+const isValidUrl = (url: string): boolean => {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
   }
 };
 export const getProducts = async (req: Request, res: Response) => {

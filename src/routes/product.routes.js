@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const product_controller_1 = require("../controllers/product.controller");
+const cloudinary_1 = require("../utils/cloudinary");
+const cloudinaryLimiter_1 = require("../middlewares/cloudinaryLimiter");
+const router = (0, express_1.Router)();
+router.post("/", cloudinaryLimiter_1.checkCloudinaryQuota, cloudinary_1.upload.single("image"), product_controller_1.createProduct);
+router.post("/bulk", cloudinaryLimiter_1.checkCloudinaryQuota, cloudinary_1.upload.single("excel"), product_controller_1.bulkCreateProducts);
+router.get("/", product_controller_1.getProducts);
+router.put("/:id", cloudinary_1.upload.single("image"), product_controller_1.updateProduct);
+router.delete("/:id", product_controller_1.deleteProduct);
+exports.default = router;
